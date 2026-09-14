@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useCallback, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useCallback, useState, useRef } from 'react'
 
 const MealContext = createContext(null)
 const FAVORITES_KEY = 'meal-finder-favorites'
@@ -27,6 +27,7 @@ export function MealProvider({ children }) {
   const [error, setError] = useState('')
   const [selectedMeal, setSelectedMeal] = useState(null)
   const [page, setPage] = useState(1)
+  const requestIdRef = useRef(0)
 
   useEffect(() => {
     localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites))
@@ -64,22 +65,35 @@ export function MealProvider({ children }) {
     }
   }
 
-  const fetchMeals = useCallback(async (searchText = '', start = 1, end = PAGE_SIZE) => {
+  const fetchMeals = useCallback(async (searchText = '', start = 1, end = PAGE_SIZE, signal) => {
     const text = (searchText || '').trim()
     const query = text ? `s=${encodeURIComponent(text)}` : 's='
     const safeStart = Math.max(1, start)
     const safeEnd = Math.max(safeStart, end)
+    const requestId = ++requestIdRef.current
+
+    if (signal?.aborted) {
+      return
+    }
 
     setLoading(true)
     setError('')
 
     try {
-      const response = await fetch(`${API_BASE}/search.php?${query}`)
+      const response = await fetch(`${API_BASE}/search.php?${query}`, signal ? { signal } : undefined)
+      if (signal?.aborted || requestId !== requestIdRef.current) {
+        return
+      }
+
       if (!response.ok) {
         throw new Error('The recipe service is unavailable right now.')
       }
 
       const data = await response.json()
+      if (signal?.aborted || requestId !== requestIdRef.current) {
+        return
+      }
+
       const nextMeals = data.meals || []
       const totalPages = Math.max(1, Math.ceil(nextMeals.length / PAGE_SIZE))
       const requestedPage = Math.min(Math.max(1, Math.ceil(safeStart / PAGE_SIZE)), totalPages)
@@ -87,15 +101,21 @@ export function MealProvider({ children }) {
 
       setMeals(nextMeals)
       setPage(requestedPage)
-      setSelectedMeal((current) => current && current.idMeal ? current : current)
+      setSelectedMeal((current) => (current && current.idMeal ? current : current))
       if (pageSlice.length === 0 && nextMeals.length > 0) {
         return
       }
     } catch (fetchError) {
+      if (signal?.aborted || fetchError.name === 'AbortError') {
+        return
+      }
+
       setMeals([])
       setError(fetchError.message || 'Something went wrong while searching.')
     } finally {
-      setLoading(false)
+      if (requestId === requestIdRef.current && !signal?.aborted) {
+        setLoading(false)
+      }
     }
   }, [])
 
@@ -142,8 +162,14 @@ export function MealProvider({ children }) {
   }
 
   useEffect(() => {
+    const controller = new AbortController()
     const { start, end } = getPageRange(page)
-    fetchMeals(query, start, end)
+
+    fetchMeals(query, start, end, controller.signal)
+
+    return () => {
+      controller.abort()
+    }
   }, [fetchMeals, query, page])
 
   const visibleMeals = useMemo(() => {

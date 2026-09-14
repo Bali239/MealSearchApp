@@ -35,6 +35,19 @@ function HomePage() {
     return () => clearTimeout(timer)
   }, [inputValue, setPage, setQuery])
 
+  const handlePageChange = (nextPage) => {
+    if (loading) {
+      return
+    }
+
+    const safePage = Math.min(totalPages, Math.max(1, nextPage))
+    if (safePage === page) {
+      return
+    }
+
+    setPage(safePage)
+  }
+
   return (
     <main className="space-y-5">
       {/* Header with title, search input, and favorites link */}
@@ -70,8 +83,8 @@ function HomePage() {
               <button
                 type="button"
                 className="rounded-full border border-orange-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition enabled:hover:-translate-y-0.5 enabled:hover:border-orange-300 disabled:cursor-not-allowed disabled:opacity-40"
-                disabled={page === 1}
-                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                disabled={loading || page === 1}
+                onClick={() => handlePageChange(page - 1)}
               >
                 Previous
               </button>
@@ -81,8 +94,8 @@ function HomePage() {
               <button
                 type="button"
                 className="rounded-full border border-orange-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition enabled:hover:-translate-y-0.5 enabled:hover:border-orange-300 disabled:cursor-not-allowed disabled:opacity-40"
-                disabled={page >= totalPages}
-                onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                disabled={loading || page >= totalPages}
+                onClick={() => handlePageChange(page + 1)}
               >
                 Next
               </button>
